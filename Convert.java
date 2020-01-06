@@ -1,6 +1,7 @@
-package com.example.mybatis.demo.util;
+package common;
 
 import java.lang.reflect.Field;
+import java.util.*;
 
 /**
  * @author Leven
@@ -18,13 +19,18 @@ public class Convert {
         Class<?> tClazz = t.getClass();
         Class<?> sClazz = s.getClass();
 
-        Field[] fields = tClazz.getDeclaredFields();
-        Class<?> superClazz = tClazz.getSuperclass();
-        if (superClazz != Object.class){
-            convertField(superClazz, s, t, superClazz.getDeclaredFields());
-        }
+        convertField(sClazz, s, t, getFieldMap(tClazz));
+    }
 
-        convertField(sClazz, s, t, fields);
+    /**
+     *
+     * @param exclusions vo中不进行转换的field名
+     */
+    public static <S, T> void convert(S s, T t, String... exclusions) throws IllegalAccessException {
+        Class<?> tClazz = t.getClass();
+        Class<?> sClazz = s.getClass();
+
+        convertField(sClazz, s, t, getFieldMap(tClazz, exclusions));
     }
 
     /**
@@ -39,23 +45,59 @@ public class Convert {
         return t;
     }
 
+    public static <S, T> T convert(S s, Class<T> tClazz, String exclusions) throws IllegalAccessException, InstantiationException {
+        T t = tClazz.newInstance();
+        convert(s, t, exclusions);
+        return t;
+    }
 
-    private static <S, T> void convertField(Class<?> sClazz, S s, T t, Field[] fields) throws IllegalAccessException {
+
+    /**
+     *
+     * @param sClazz 源对象的类
+     * @param s 源对象
+     * @param t 目标对象
+     * @param tFieldMap 目标对象的所有Field，包括其所有父类的Field（Object除外）
+     */
+    private static <S, T> void convertField(Class<?> sClazz, S s, T t, Map<String, Field> tFieldMap) throws IllegalAccessException {
+        Map<String, Field> sFieldMap = getFieldMap(sClazz);
         Field f;
-        for (Field field : fields){
-            try {
-                f = sClazz.getDeclaredField(field.getName());
-            }catch (NoSuchFieldException e){
-//                try {
-//                    f = sClazz.getSuperclass().getDeclaredField(field.getName());
-//                } catch (NoSuchFieldException ex) {
-//                    continue;
-//                }
-                continue;
+        for (Map.Entry<String, Field> entry : tFieldMap.entrySet()){
+            String fieldName = entry.getKey();
+            if (sFieldMap.containsKey(fieldName)){
+                f = sFieldMap.get(fieldName);
+                f.setAccessible(true);
+                Field field = entry.getValue();
+                field.setAccessible(true);
+                field.set(t, f.get(s));
             }
-            f.setAccessible(true);
-            field.setAccessible(true);
-            field.set(t, f.get(s));
         }
+    }
+
+    /**
+     * 获取类的所有field，如果子类中存在与父类相同名子的field，则丢弃父类中的field
+     * @param clazz 类
+     * @return Map<String, Field> Map<属性名, Field对象>
+     */
+    private static Map<String, Field> getFieldMap(Class<?> clazz){
+        Map<String, Field> fieldMap = new HashMap<>();
+        Class<?> superClazz = clazz;
+        while (superClazz != Object.class){
+            for (Field field: superClazz.getDeclaredFields()){
+                if (!fieldMap.containsKey(field.getName())){
+                    fieldMap.put(field.getName(), field);
+                }
+            }
+            superClazz = superClazz.getSuperclass();
+        }
+        return fieldMap;
+    }
+
+    private static Map<String, Field> getFieldMap(Class<?> clazz, String... exclusions){
+        Map<String, Field> fieldMap = getFieldMap(clazz);
+        for (String exclusion : exclusions){
+            fieldMap.remove(exclusion);
+        }
+        return fieldMap;
     }
 }
